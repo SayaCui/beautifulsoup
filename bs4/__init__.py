@@ -976,10 +976,23 @@ class BeautifulSoup(Tag):
 
         stack_size = len(self.tagStack)
         for i in range(stack_size - 1, 0, -1):
-            if not self.open_tag_counter.get(name):
+            if (
+                not self.open_tag_counter.get(name)
+                and not (
+                    self.replacer is not None
+                    and any(
+                        t.__dict__.get("_original_parse_name") == name
+                        for t in self.tagStack[1:]
+                    )
+                )
+            ):
                 break
+            
             t = self.tagStack[i]
-            if name == t.name and nsprefix == t.prefix:
+            
+            original_name = t.__dict__.get("_original_parse_name", t.name)
+            if name == original_name and nsprefix == t.prefix:
+
                 if inclusivePop:
                     most_recently_popped = self.popTag()
                 break
@@ -1047,14 +1060,34 @@ class BeautifulSoup(Tag):
         )
         if tag is None:
             return tag
-        if self.replacer is not None:
-            if tag.name == self.replacer.og_tag:
-                tag.name = self.replacer.alt_tag
+
+        tag._original_parse_name = name
         
+        if self.replacer is not None:
+            if self.replacer.og_tag is not None:
+                if tag.name == self.replacer.og_tag:
+                    tag.name = self.replacer.alt_tag
+
+            if self.replacer.name_xformer is not None:
+                tag.name = self.replacer.name_xformer(tag)
+
+            if self.replacer.attrs_xformer is not None:
+                tag.attrs = self.replacer.attrs_xformer(tag)
+
+                
         if self._most_recent_element is not None:
             self._most_recent_element.next_element = tag
         self._most_recent_element = tag
         self.pushTag(tag)
+
+        if self.replacer is not None and self.replacer.xformer is not None:
+            self.replacer.xformer(tag)
+
+            if tag.contents:
+                last = tag._last_descendant()
+                if last is not None:
+                    self._most_recent_element = last
+
         return tag
 
     def handle_endtag(self, name: str, nsprefix: Optional[str] = None) -> None:
@@ -1068,11 +1101,9 @@ class BeautifulSoup(Tag):
         # print("End tag: " + name)
         self.endData()
 
-        if self.replacer is not None:
-            if name == self.replacer.og_tag:
-                name = self.replacer.alt_tag
-
         self._popToTag(name, nsprefix)
+
+
 
     def handle_data(self, data: str) -> None:
         """Called by the tree builder when a chunk of textual data is
