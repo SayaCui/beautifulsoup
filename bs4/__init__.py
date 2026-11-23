@@ -205,7 +205,8 @@ class BeautifulSoup(Tag):
     #: in the original markup. These mark character sequences that
     #: could not be represented in Unicode.
     contains_replacement_characters: bool
-
+    def __iter__(self):
+        return self.descendants
     def __init__(
         self,
         markup: _IncomingMarkup = "",
